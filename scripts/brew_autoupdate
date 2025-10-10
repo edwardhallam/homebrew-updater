@@ -1,0 +1,20 @@
+#!/bin/sh
+
+export HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK=1
+export PATH='/opt/homebrew/Library/Homebrew/shims/shared:/Users/edwardhallam/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/VMware Fusion.app/Contents/Public:/Users/edwardhallam/.local/bin:/opt/homebrew/Library/Taps/domt4/homebrew-autoupdate/cmd'
+export HOMEBREW_CACHE='/Users/edwardhallam/Library/Caches/Homebrew'
+export HOMEBREW_LOGS='/Users/edwardhallam/Library/Logs/Homebrew'
+export SUDO_ASKPASS='/Users/edwardhallam/Library/Application Support/com.github.domt4.homebrew-autoupdate/brew_autoupdate_sudo_gui'
+
+# Run the update chain and capture exit status
+/bin/date && /opt/homebrew/bin/brew update && /opt/homebrew/bin/brew upgrade --formula -v && /opt/homebrew/bin/brew upgrade --cask -v --greedy && /opt/homebrew/bin/brew cleanup
+EXIT_STATUS=$?
+
+# Send notification based on result
+if [ $EXIT_STATUS -eq 0 ]; then
+  /usr/bin/open -g /opt/homebrew/Library/Taps/domt4/homebrew-autoupdate/notifier/brew-autoupdate.app
+else
+  /usr/bin/osascript -e 'display notification "Homebrew update failed. Check logs." with title "brew-autoupdate" sound name "Basso"'
+fi
+
+exit $EXIT_STATUS

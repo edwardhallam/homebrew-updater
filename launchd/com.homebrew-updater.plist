@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.homebrew-updater</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/python3</string>
+		<!-- UPDATE THIS PATH: Replace with your actual installation path -->
+		<string>/path/to/homebrew-updater/scripts/homebrew_updater.py</string>
+	</array>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<!-- Discord webhook URL - REQUIRED for Discord notifications -->
+		<key>DISCORD_WEBHOOK_URL</key>
+		<string>https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN</string>
+
+		<!-- Discord user ID for @mentions - OPTIONAL -->
+		<key>DISCORD_USER_ID</key>
+		<string>YOUR_USER_ID_HERE</string>
+
+		<!-- Homebrew path - Default works for Apple Silicon Macs -->
+		<key>BREW_PATH</key>
+		<string>/opt/homebrew/bin/brew</string>
+
+		<!-- Idle threshold in seconds (default: 300 = 5 minutes) -->
+		<key>IDLE_THRESHOLD_SECONDS</key>
+		<string>300</string>
+
+		<!-- Number of log files to keep -->
+		<key>MAX_LOG_FILES</key>
+		<string>10</string>
+	</dict>
+
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>10</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+
+	<key>StandardOutPath</key>
+	<string>/tmp/homebrew-updater.out</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/homebrew-updater.err</string>
+
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>LowPriorityBackgroundIO</key>
+	<true/>
+
+	<key>RunAtLoad</key>
+	<false/>
+</dict>
+</plist>

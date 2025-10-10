@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.github.domt4.homebrew-autoupdate</string>
+	<key>LowPriorityBackgroundIO</key>
+	<true/>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>Program</key>
+	<string>/Users/edwardhallam/Library/Application Support/com.github.domt4.homebrew-autoupdate/brew_autoupdate</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/edwardhallam/Library/Application Support/com.github.domt4.homebrew-autoupdate/brew_autoupdate</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/Users/edwardhallam/Library/Logs/com.github.domt4.homebrew-autoupdate/com.github.domt4.homebrew-autoupdate.out</string>
+	<key>StandardOutPath</key>
+	<string>/Users/edwardhallam/Library/Logs/com.github.domt4.homebrew-autoupdate/com.github.domt4.homebrew-autoupdate.out</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>10</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+</dict>
+</plist>
