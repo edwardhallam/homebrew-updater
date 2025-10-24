@@ -6,8 +6,7 @@ Keep your Homebrew packages and casks up-to-date automatically with smart idle d
 
 ## ✨ Features
 
-- **🔔 Dual Notification System**: Slack/Discord webhooks + native macOS notifications for reliable alerts
-- **🌐 Flexible Platform Support**: Choose Discord, Slack, or both for webhook notifications
+- **🔔 Notification System**: Slack/Discord webhooks + native macOS notifications
 - **🖱️ Intelligent Idle Detection**: Skips sudo-requiring operations when system is idle
 - **👻 Ghost Cask Healing**: Automatically removes broken cask installations
 - **📦 Complete Package Management**: Updates formulae, casks, and cleans up old files
