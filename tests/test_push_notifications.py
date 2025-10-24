@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test push notifications - Discord + macOS native
+Test push notifications - Slack/Discord + macOS native
 """
 
 import sys
@@ -19,8 +19,19 @@ def main():
     print("Push Notification Test")
     print("="*60)
     print()
+
+    # Detect configured platform
+    platform = homebrew_updater.NOTIFICATION_PLATFORM
+    platform_name = {
+        "discord": "Discord",
+        "slack": "Slack",
+        "both": "Discord + Slack"
+    }.get(platform, platform.title())
+
+    print(f"Configured platform: {platform_name}")
+    print()
     print("This will send 4 test notifications:")
-    print("  • Discord message (with @mention)")
+    print(f"  • {platform_name} webhook message")
     print("  • macOS Notification Center alert")
     print()
     print("You should see BOTH for each test!")
@@ -40,9 +51,9 @@ def main():
         print(f"  Message: {message}")
         print(f"  Sending...")
 
-        homebrew_updater.send_discord_notification(message, error=is_error)
+        homebrew_updater.send_notification(message, error=is_error)
 
-        print(f"  ✅ Discord: Sent (check channel)")
+        print(f"  ✅ {platform_name}: Sent (check channel)")
         print(f"  ✅ macOS: Sent (check Notification Center)")
 
         if i < len(tests):
@@ -55,11 +66,23 @@ def main():
     print()
     print("VERIFY:")
     print()
-    print("1. 📱 DISCORD:")
-    print("   • Check Discord channel")
-    print("   • Should see 4 messages with @mention")
-    print("   • Each should ping you")
-    print()
+
+    # Platform-specific verification instructions
+    if platform in ("discord", "both"):
+        print("1. 📱 DISCORD:")
+        print("   • Check Discord channel")
+        print("   • Should see 4 messages")
+        if homebrew_updater.DISCORD_USER_ID:
+            print("   • Should have @mentions")
+        print()
+
+    if platform in ("slack", "both"):
+        print("1. 💬 SLACK:")
+        print("   • Check Slack channel")
+        print("   • Should see 4 messages with rich blocks")
+        print("   • Green color bars for success, red for errors")
+        print()
+
     print("2. 💻 macOS NOTIFICATION CENTER:")
     print("   • Click the clock (top-right)")
     print("   • Look for 'Homebrew Updater' notifications")
@@ -69,10 +92,9 @@ def main():
     print("3. 🔔 PUSH NOTIFICATIONS:")
     print("   • Did you hear notification sounds?")
     print("   • Did banners appear on screen?")
-    print("   • Did badge appear on any app icons?")
     print()
-    print("If you saw macOS notifications, you'll ALWAYS get alerts")
-    print("even if Discord push notifications don't work!")
+    print(f"If you saw macOS notifications, you'll ALWAYS get alerts")
+    print(f"even if {platform_name} notifications don't work!")
     print()
 
     return 0

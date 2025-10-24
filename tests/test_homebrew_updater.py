@@ -72,12 +72,123 @@ class TestIdleDetection(unittest.TestCase):
         self.assertFalse(homebrew_updater.is_user_idle())
 
 
-class TestDiscordNotifications(unittest.TestCase):
-    """Test Discord notification functionality"""
+class TestWebhookNotifications(unittest.TestCase):
+    """Test webhook notification functionality (Discord & Slack)"""
+
+    @patch('homebrew_updater.urllib.request.urlopen')
+    def test_send_discord_helper_success(self, mock_urlopen):
+        """Test successful Discord notification via _send_discord"""
+        # Save original and set test webhook
+        original_webhook = homebrew_updater.DISCORD_WEBHOOK_URL
+        homebrew_updater.DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/test/test"
+
+        mock_response = MagicMock()
+        mock_response.status = 204
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        result = homebrew_updater._send_discord("Test message")
+        self.assertTrue(result)
+        self.assertTrue(mock_urlopen.called)
+
+        # Restore original
+        homebrew_updater.DISCORD_WEBHOOK_URL = original_webhook
+
+    @patch('homebrew_updater.urllib.request.urlopen')
+    def test_send_slack_helper_success(self, mock_urlopen):
+        """Test successful Slack notification via _send_slack"""
+        # Save original and set test webhook
+        original_webhook = homebrew_updater.SLACK_WEBHOOK_URL
+        homebrew_updater.SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/test/test/test"
+
+        mock_response = MagicMock()
+        mock_response.status = 200  # Slack returns 200, not 204
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        result = homebrew_updater._send_slack("Test message")
+        self.assertTrue(result)
+        self.assertTrue(mock_urlopen.called)
+
+        # Restore original
+        homebrew_updater.SLACK_WEBHOOK_URL = original_webhook
+
+    def test_send_discord_helper_no_webhook(self):
+        """Test _send_discord when webhook is not configured"""
+        original_webhook = homebrew_updater.DISCORD_WEBHOOK_URL
+        homebrew_updater.DISCORD_WEBHOOK_URL = ""
+
+        result = homebrew_updater._send_discord("Test message")
+        self.assertFalse(result)
+
+        # Restore original
+        homebrew_updater.DISCORD_WEBHOOK_URL = original_webhook
+
+    def test_send_slack_helper_no_webhook(self):
+        """Test _send_slack when webhook is not configured"""
+        original_webhook = homebrew_updater.SLACK_WEBHOOK_URL
+        homebrew_updater.SLACK_WEBHOOK_URL = ""
+
+        result = homebrew_updater._send_slack("Test message")
+        self.assertFalse(result)
+
+        # Restore original
+        homebrew_updater.SLACK_WEBHOOK_URL = original_webhook
+
+    @patch('homebrew_updater.send_macos_notification')
+    @patch('homebrew_updater._send_discord')
+    def test_send_notification_discord_platform(self, mock_discord, mock_macos):
+        """Test send_notification with Discord platform"""
+        original_platform = homebrew_updater.NOTIFICATION_PLATFORM
+        homebrew_updater.NOTIFICATION_PLATFORM = "discord"
+        mock_discord.return_value = True
+
+        homebrew_updater.send_notification("Test message")
+
+        mock_discord.assert_called_once()
+        mock_macos.assert_called_once()
+
+        # Restore original
+        homebrew_updater.NOTIFICATION_PLATFORM = original_platform
+
+    @patch('homebrew_updater.send_macos_notification')
+    @patch('homebrew_updater._send_slack')
+    def test_send_notification_slack_platform(self, mock_slack, mock_macos):
+        """Test send_notification with Slack platform"""
+        original_platform = homebrew_updater.NOTIFICATION_PLATFORM
+        homebrew_updater.NOTIFICATION_PLATFORM = "slack"
+        mock_slack.return_value = True
+
+        homebrew_updater.send_notification("Test message")
+
+        mock_slack.assert_called_once()
+        mock_macos.assert_called_once()
+
+        # Restore original
+        homebrew_updater.NOTIFICATION_PLATFORM = original_platform
+
+    @patch('homebrew_updater.send_macos_notification')
+    @patch('homebrew_updater._send_discord')
+    @patch('homebrew_updater._send_slack')
+    def test_send_notification_both_platforms(self, mock_slack, mock_discord, mock_macos):
+        """Test send_notification with both platforms"""
+        original_platform = homebrew_updater.NOTIFICATION_PLATFORM
+        homebrew_updater.NOTIFICATION_PLATFORM = "both"
+        mock_discord.return_value = True
+        mock_slack.return_value = True
+
+        homebrew_updater.send_notification("Test message")
+
+        mock_discord.assert_called_once()
+        mock_slack.assert_called_once()
+        mock_macos.assert_called_once()
+
+        # Restore original
+        homebrew_updater.NOTIFICATION_PLATFORM = original_platform
 
     @patch('homebrew_updater.urllib.request.urlopen')
     def test_send_discord_notification_success(self, mock_urlopen):
-        """Test successful Discord notification"""
+        """Test successful Discord notification (backwards compatibility)"""
         mock_response = MagicMock()
         mock_response.status = 204
         mock_response.__enter__.return_value = mock_response
@@ -298,7 +409,7 @@ class TestMainFlow(unittest.TestCase):
     """Test main execution flow"""
 
     @patch('homebrew_updater.cleanup_old_logs')
-    @patch('homebrew_updater.send_discord_notification')
+    @patch('homebrew_updater.send_notification')
     @patch('homebrew_updater.is_user_idle')
     @patch('homebrew_updater.brew_update')
     @patch('homebrew_updater.heal_ghost_casks')
@@ -308,7 +419,7 @@ class TestMainFlow(unittest.TestCase):
     @patch('homebrew_updater.brew_doctor')
     def test_main_user_active_success(self, mock_doctor, mock_cleanup, mock_upgrade_casks,
                                        mock_upgrade_formulae, mock_heal, mock_update,
-                                       mock_idle, mock_discord, mock_cleanup_logs):
+                                       mock_idle, mock_notification, mock_cleanup_logs):
         """Test main flow when user is active and all succeeds"""
         mock_idle.return_value = False
         mock_update.return_value = True
@@ -327,7 +438,7 @@ class TestMainFlow(unittest.TestCase):
         mock_cleanup.assert_called_once()
 
     @patch('homebrew_updater.cleanup_old_logs')
-    @patch('homebrew_updater.send_discord_notification')
+    @patch('homebrew_updater.send_notification')
     @patch('homebrew_updater.is_user_idle')
     @patch('homebrew_updater.brew_update')
     @patch('homebrew_updater.heal_ghost_casks')
@@ -335,7 +446,7 @@ class TestMainFlow(unittest.TestCase):
     @patch('homebrew_updater.brew_cleanup')
     @patch('homebrew_updater.brew_doctor')
     def test_main_user_idle_success(self, mock_doctor, mock_cleanup, mock_upgrade_formulae,
-                                     mock_heal, mock_update, mock_idle, mock_discord,
+                                     mock_heal, mock_update, mock_idle, mock_notification,
                                      mock_cleanup_logs):
         """Test main flow when user is idle (skips casks)"""
         mock_idle.return_value = True
@@ -350,10 +461,10 @@ class TestMainFlow(unittest.TestCase):
         mock_upgrade_formulae.assert_called_once()
 
     @patch('homebrew_updater.cleanup_old_logs')
-    @patch('homebrew_updater.send_discord_notification')
+    @patch('homebrew_updater.send_notification')
     @patch('homebrew_updater.is_user_idle')
     @patch('homebrew_updater.brew_update')
-    def test_main_update_failure(self, mock_update, mock_idle, mock_discord, mock_cleanup_logs):
+    def test_main_update_failure(self, mock_update, mock_idle, mock_notification, mock_cleanup_logs):
         """Test main flow when brew update fails"""
         mock_idle.return_value = False
         mock_update.return_value = False
@@ -364,7 +475,7 @@ class TestMainFlow(unittest.TestCase):
         # Verify error notification was sent (check kwargs for error=True)
         self.assertTrue(any(
             call.kwargs.get('error', False)
-            for call in mock_discord.call_args_list
+            for call in mock_notification.call_args_list
         ))
 
 

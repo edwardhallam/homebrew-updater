@@ -2,11 +2,12 @@
 
 **Automated Homebrew package management for macOS with intelligent scheduling and dual notifications.**
 
-Keep your Homebrew packages and casks up-to-date automatically with smart idle detection, Discord webhooks, native macOS notifications, and automatic ghost cask healing.
+Keep your Homebrew packages and casks up-to-date automatically with smart idle detection, Slack/Discord webhooks, native macOS notifications, and automatic ghost cask healing.
 
 ## ✨ Features
 
-- **🔔 Dual Notification System**: Discord webhooks + native macOS notifications for reliable alerts
+- **🔔 Dual Notification System**: Slack/Discord webhooks + native macOS notifications for reliable alerts
+- **🌐 Flexible Platform Support**: Choose Discord, Slack, or both for webhook notifications
 - **🖱️ Intelligent Idle Detection**: Skips sudo-requiring operations when system is idle
 - **👻 Ghost Cask Healing**: Automatically removes broken cask installations
 - **📦 Complete Package Management**: Updates formulae, casks, and cleans up old files
@@ -21,7 +22,7 @@ Keep your Homebrew packages and casks up-to-date automatically with smart idle d
 - macOS (tested on macOS 10.15+)
 - Homebrew installed
 - Python 3.7+
-- Discord webhook (optional, for Discord notifications)
+- Slack or Discord webhook (optional, for remote notifications)
 
 ## 🚀 Quick Start
 
@@ -40,10 +41,32 @@ Copy the example environment file and fill in your details:
 cp .env.example .env
 ```
 
-Edit `.env` with your configuration:
+#### Choose Your Notification Platform
+
+You can use **Slack**, **Discord**, or **both**. Edit `.env` with your configuration:
+
+**For Slack notifications:**
 
 ```bash
-# Required for Discord notifications
+# Choose notification platform
+NOTIFICATION_PLATFORM=slack
+
+# Slack webhook URL
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Optional: Customize these if needed
+BREW_PATH=/opt/homebrew/bin/brew
+IDLE_THRESHOLD_SECONDS=300
+MAX_LOG_FILES=10
+```
+
+**For Discord notifications:**
+
+```bash
+# Choose notification platform
+NOTIFICATION_PLATFORM=discord
+
+# Discord webhook URL
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN
 
 # Optional: Your Discord user ID for @mentions
@@ -55,12 +78,35 @@ IDLE_THRESHOLD_SECONDS=300
 MAX_LOG_FILES=10
 ```
 
-**Getting your Discord Webhook URL:**
+**For both platforms:**
+
+```bash
+# Choose notification platform
+NOTIFICATION_PLATFORM=both
+
+# Both webhook URLs
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN
+DISCORD_USER_ID=YOUR_USER_ID_HERE
+```
+
+#### Setting Up Slack Webhook
+
+1. Go to https://api.slack.com/apps
+2. Create a new app (or use existing)
+3. Navigate to "Incoming Webhooks"
+4. Activate Incoming Webhooks
+5. Click "Add New Webhook to Workspace"
+6. Select the channel for notifications
+7. Copy the webhook URL
+
+#### Setting Up Discord Webhook
+
 1. Open Discord → Server Settings → Integrations → Webhooks
 2. Create a new webhook
 3. Copy the webhook URL
 
-**Getting your Discord User ID:**
+**Optional - Getting your Discord User ID (for @mentions):**
 1. Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)
 2. Right-click your username → Copy User ID
 
@@ -105,6 +151,8 @@ launchctl list | grep homebrew-updater
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `NOTIFICATION_PLATFORM` | Notification platform: `discord`, `slack`, or `both` | `discord` |
+| `SLACK_WEBHOOK_URL` | Slack webhook URL for notifications | _(none)_ |
 | `DISCORD_WEBHOOK_URL` | Discord webhook URL for notifications | _(none)_ |
 | `DISCORD_USER_ID` | Discord user ID for @mentions | _(none)_ |
 | `BREW_PATH` | Path to Homebrew binary | `/opt/homebrew/bin/brew` |
@@ -137,7 +185,7 @@ The updater checks system idle time before running:
    - Upgrades casks (if user active)
 4. **Cleanup**: Removes old downloads and cache files
 5. **Health Check**: Runs `brew doctor` for diagnostics
-6. **Notifications**: Sends detailed summary to Discord and macOS Notification Center
+6. **Notifications**: Sends detailed summary to Slack/Discord and macOS Notification Center
 
 ## 🔔 Notification Examples
 
@@ -196,8 +244,10 @@ homebrew-updater/
 
 ### No notifications received
 
-- **Discord**: Verify webhook URL is correct in `.env` or LaunchAgent plist
+- **Slack**: Verify webhook URL is correct in `.env` and `NOTIFICATION_PLATFORM=slack` or `both`
+- **Discord**: Verify webhook URL is correct in `.env` and `NOTIFICATION_PLATFORM=discord` or `both`
 - **macOS**: Check System Preferences → Notifications → Script Editor
+- **Test webhooks**: Run `python3 tests/test_slack_webhook.py` or `python3 tests/test_discord_webhook.py`
 
 ### Script not running automatically
 

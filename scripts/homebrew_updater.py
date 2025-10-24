@@ -43,6 +43,13 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 # Discord user ID for mentions (get via: right-click username → Copy User ID)
 DISCORD_USER_ID = os.getenv("DISCORD_USER_ID", "")
 
+# Slack webhook URL - loaded from environment variable
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
+
+# Notification platform: "discord", "slack", or "both"
+# Determines which webhook(s) to use for notifications
+NOTIFICATION_PLATFORM = os.getenv("NOTIFICATION_PLATFORM", "discord").lower()
+
 # Idle threshold in seconds (default: 5 minutes)
 IDLE_THRESHOLD_SECONDS = int(os.getenv("IDLE_THRESHOLD_SECONDS", "300"))
 
@@ -92,7 +99,7 @@ def cleanup_old_logs():
             log(f"Failed to remove old log {old_log.name}: {e}", "WARN")
 
 # ============================================================================
-# DISCORD NOTIFICATIONS
+# WEBHOOK NOTIFICATIONS (Discord & Slack)
 # ============================================================================
 
 def send_macos_notification(title: str, message: str, sound: str = "default"):
@@ -115,15 +122,11 @@ def send_macos_notification(title: str, message: str, sound: str = "default"):
         log(f"Failed to send macOS notification: {e}", "ERROR")
 
 
-def send_discord_notification(message: str, error: bool = False):
-    """Send notification to Discord webhook and macOS notification center"""
+def _send_discord(message: str, error: bool = False) -> bool:
+    """Send notification to Discord webhook (internal helper)"""
     if not DISCORD_WEBHOOK_URL or DISCORD_WEBHOOK_URL == "YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN":
         log("Discord webhook not configured, skipping Discord notification", "WARN")
-        # Still send macOS notification even if Discord is not configured
-        sound = "Basso" if error else "Glass"
-        first_line = message.split('\n')[0].strip() or "Homebrew Updater Notification"
-        send_macos_notification("Homebrew Updater", first_line, sound=sound)
-        return
+        return False
 
     color = 0xFF0000 if error else 0x00FF00  # Red for errors, green for success
 
@@ -162,16 +165,148 @@ def send_discord_notification(message: str, error: bool = False):
         with urllib.request.urlopen(req, timeout=10) as response:
             if response.status == 204:
                 log("Discord notification sent successfully")
+                return True
             else:
                 log(f"Discord notification returned status {response.status}", "WARN")
+                return False
     except urllib.error.URLError as e:
         log(f"Failed to send Discord notification: {e}", "ERROR")
+        return False
     except Exception as e:
         log(f"Unexpected error sending Discord notification: {e}", "ERROR")
+        return False
 
-    # Also send macOS notification for reliable local alerts
+
+def _send_slack(message: str, error: bool = False) -> bool:
+    """Send notification to Slack webhook using blocks (internal helper)"""
+    if not SLACK_WEBHOOK_URL:
+        log("Slack webhook not configured, skipping Slack notification", "WARN")
+        return False
+
+    # Parse message into structured sections
+    lines = message.split('\n')
+    first_line = lines[0].strip() if lines else "Homebrew Updater Notification"
+
+    # Build Slack blocks for rich formatting
+    blocks = []
+
+    # Header block with first line (emoji + title)
+    blocks.append({
+        "type": "header",
+        "text": {
+            "type": "plain_text",
+            "text": first_line,
+            "emoji": True
+        }
+    })
+
+    # Parse remaining lines into sections
+    current_section = []
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            # Empty line: flush current section
+            if current_section:
+                blocks.append({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "\n".join(current_section)
+                    }
+                })
+                current_section = []
+        elif line.startswith("**") or line.startswith("•") or line.startswith("🔐") or line.startswith("🧹"):
+            # Markdown bold or list item
+            current_section.append(line)
+        else:
+            current_section.append(line)
+
+    # Flush any remaining section
+    if current_section:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "\n".join(current_section)
+            }
+        })
+
+    # Add context footer with hostname and timestamp
+    blocks.append({
+        "type": "context",
+        "elements": [
+            {
+                "type": "mrkdwn",
+                "text": f"_{os.uname().nodename}_ • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            }
+        ]
+    })
+
+    # Color-coded attachment
+    attachment_color = "#FF0000" if error else "#36a64f"  # Red or green
+
+    payload = {
+        "blocks": blocks,
+        "attachments": [{
+            "color": attachment_color
+        }]
+    }
+
+    # Send to Slack
+    try:
+        req = urllib.request.Request(
+            SLACK_WEBHOOK_URL,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'Homebrew-Updater/1.0 (Python)'
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            if response.status == 200:
+                log("Slack notification sent successfully")
+                return True
+            else:
+                log(f"Slack notification returned status {response.status}", "WARN")
+                return False
+    except urllib.error.URLError as e:
+        log(f"Failed to send Slack notification: {e}", "ERROR")
+        return False
+    except Exception as e:
+        log(f"Unexpected error sending Slack notification: {e}", "ERROR")
+        return False
+
+
+def send_notification(message: str, error: bool = False):
+    """Send notification via configured platform(s) and macOS notification center"""
+    # Extract first line for macOS notification
+    first_line = message.split('\n')[0].strip() or "Homebrew Updater Notification"
     sound = "Basso" if error else "Glass"
+
+    # Track if any webhook succeeded
+    webhook_sent = False
+
+    # Send to configured platform(s)
+    if NOTIFICATION_PLATFORM in ("discord", "both"):
+        if _send_discord(message, error):
+            webhook_sent = True
+
+    if NOTIFICATION_PLATFORM in ("slack", "both"):
+        if _send_slack(message, error):
+            webhook_sent = True
+
+    # Always send macOS notification for reliable local alerts
     send_macos_notification("Homebrew Updater", first_line, sound=sound)
+
+    # If no webhooks configured or all failed, warn but don't fail
+    if not webhook_sent and NOTIFICATION_PLATFORM != "":
+        log("No webhook notifications were sent (check configuration)", "WARN")
+
+
+# Backwards compatibility alias
+def send_discord_notification(message: str, error: bool = False):
+    """Deprecated: Use send_notification() instead. Kept for backwards compatibility."""
+    send_notification(message, error)
 
 # ============================================================================
 # IDLE DETECTION
@@ -418,7 +553,7 @@ def main():
     cleanup_old_logs()
 
     # Send start notification
-    send_discord_notification("🚀 Starting Homebrew update...")
+    send_notification("🚀 Starting Homebrew update...")
 
     try:
         # Check if user is idle
@@ -426,7 +561,7 @@ def main():
 
         if user_idle:
             log("User is idle - will skip cask updates requiring sudo")
-            send_discord_notification("⏸️ User idle - running formulae updates only")
+            send_notification("⏸️ User idle - running formulae updates only")
         else:
             log("User is active - proceeding with full update")
 
@@ -435,7 +570,7 @@ def main():
             error_msg = "Failed to update Homebrew"
             log(error_msg, "ERROR")
             sudo_status = "🔐 Sudo operations were skipped (user idle)" if user_idle else "🔐 Sudo operations would have been executed"
-            send_discord_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
+            send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
             return 1
 
         # Heal ghost casks (skip if idle to avoid sudo)
@@ -447,7 +582,7 @@ def main():
             error_msg = "Failed to upgrade formulae"
             log(error_msg, "ERROR")
             sudo_status = "🔐 Sudo operations were skipped (user idle)" if user_idle else "🔐 Sudo operations were executed for ghost healing"
-            send_discord_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
+            send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
             return 1
 
         upgraded_casks = []
@@ -458,7 +593,7 @@ def main():
                 error_msg = "Failed to upgrade casks"
                 log(error_msg, "ERROR")
                 sudo_status = "🔐 Sudo operations were executed for ghost healing & some casks"
-                send_discord_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
+                send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
                 return 1
         else:
             log("Skipping cask updates (user idle)")
@@ -511,7 +646,7 @@ def main():
         else:
             summary += f"🔐 **Sudo Operations:** Executed (casks & ghost healing)"
 
-        send_discord_notification(summary)
+        send_notification(summary)
 
         return 0
 
@@ -521,7 +656,7 @@ def main():
         # Try to get sudo status (user_idle may not be defined if error occurred very early)
         try:
             sudo_status = "🔐 Sudo operations were skipped (user idle)" if user_idle else "🔐 Sudo operations may have been partially executed"
-            send_discord_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
+            send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
         except NameError:
             # user_idle not defined, error occurred before idle check
             send_discord_notification(f"❌ {error_msg}\n\n🔐 Sudo status unknown (error occurred during initialization)", error=True)
