@@ -457,13 +457,18 @@ def heal_ghost_casks(skip_sudo: bool = False) -> List[str]:
                             if apps:
                                 found = False
                                 for app in apps:
-                                    app_path = Path("/Applications") / app
-                                    home_app_path = Path.home() / "Applications" / app
+                                    # Extract just the .app filename, stripping version directories
+                                    app_name = Path(app).name
+                                    app_path = Path("/Applications") / app_name
+                                    home_app_path = Path.home() / "Applications" / app_name
+                                    log(f"  Checking {cask_name}: looking for {app_name}")
                                     if app_path.exists() or home_app_path.exists():
                                         found = True
+                                        log(f"  ✓ Found {app_name} for {cask_name}")
                                         break
 
                                 if not found:
+                                    log(f"  ✗ No app found for {cask_name}, marking as ghost")
                                     ghost_casks.append(cask_name)
                 except json.JSONDecodeError as e:
                     log(f"Failed to parse cask info JSON: {e}", "WARN")
@@ -569,11 +574,11 @@ def main():
         if not brew_update():
             error_msg = "Failed to update Homebrew"
             log(error_msg, "ERROR")
-            sudo_status = "🔐 Sudo operations were skipped (user idle)" if user_idle else "🔐 Sudo operations would have been executed"
+            sudo_status = "🔐 Cask operations were skipped (user idle)" if user_idle else "🔐 Cask operations would have been attempted"
             send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
             return 1
 
-        # Heal ghost casks (skip if idle to avoid sudo)
+        # Heal ghost casks (skip if idle to avoid potential sudo prompts)
         removed_ghosts = heal_ghost_casks(skip_sudo=user_idle)
 
         # Upgrade formulae
@@ -581,7 +586,7 @@ def main():
         if not success:
             error_msg = "Failed to upgrade formulae"
             log(error_msg, "ERROR")
-            sudo_status = "🔐 Sudo operations were skipped (user idle)" if user_idle else "🔐 Sudo operations were executed for ghost healing"
+            sudo_status = "🔐 Cask operations were skipped (user idle)" if user_idle else "🔐 Ghost healing was attempted (may or may not have required sudo)"
             send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
             return 1
 
@@ -592,7 +597,7 @@ def main():
             if not success:
                 error_msg = "Failed to upgrade casks"
                 log(error_msg, "ERROR")
-                sudo_status = "🔐 Sudo operations were executed for ghost healing & some casks"
+                sudo_status = "🔐 Ghost healing & cask upgrades were attempted (may or may not have required sudo)"
                 send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
                 return 1
         else:
@@ -640,11 +645,11 @@ def main():
 
         summary += f"🧹 **Cleanup:** Complete\n"
 
-        # Add sudo execution status
+        # Add cask operation status
         if user_idle:
-            summary += f"🔐 **Sudo Operations:** Skipped (user idle)"
+            summary += f"🔐 **Cask Operations:** Skipped (user idle)"
         else:
-            summary += f"🔐 **Sudo Operations:** Executed (casks & ghost healing)"
+            summary += f"🔐 **Cask Operations:** Completed (sudo only if required by system)"
 
         send_notification(summary)
 
@@ -653,13 +658,13 @@ def main():
     except Exception as e:
         error_msg = f"Unexpected error: {e}"
         log(error_msg, "ERROR")
-        # Try to get sudo status (user_idle may not be defined if error occurred very early)
+        # Try to get operation status (user_idle may not be defined if error occurred very early)
         try:
-            sudo_status = "🔐 Sudo operations were skipped (user idle)" if user_idle else "🔐 Sudo operations may have been partially executed"
-            send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
+            operation_status = "🔐 Cask operations were skipped (user idle)" if user_idle else "🔐 Cask operations may have been partially completed"
+            send_notification(f"❌ {error_msg}\n\n{operation_status}", error=True)
         except NameError:
             # user_idle not defined, error occurred before idle check
-            send_discord_notification(f"❌ {error_msg}\n\n🔐 Sudo status unknown (error occurred during initialization)", error=True)
+            send_discord_notification(f"❌ {error_msg}\n\n🔐 Operation status unknown (error occurred during initialization)", error=True)
         return 1
 
 if __name__ == "__main__":

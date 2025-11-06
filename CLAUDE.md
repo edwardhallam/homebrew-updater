@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This repository contains an automated Homebrew updater for macOS that runs daily via LaunchAgent. The system features a **dual notification architecture** (Slack/Discord webhooks + macOS native notifications), flexible platform support, intelligent idle detection for sudo operations, and automatic ghost cask healing.
+This repository contains an automated Homebrew updater for macOS that runs daily via LaunchAgent. The system features a **dual notification architecture** (Slack/Discord webhooks + macOS native notifications), flexible platform support, intelligent idle detection for sudo operations, automatic ghost cask healing, and **passwordless sudo** configuration for unattended cask upgrades.
 
 **Active Script:** `scripts/homebrew_updater.py` (Python 3)
 **Scheduled Via:** `launchd/com.homebrew-updater.plist` (daily at 10:00 AM)
 **Supported Platforms:** Slack, Discord, or both
+**Sudo Configuration:** `/etc/sudoers.d/homebrew-updater` (for unattended operation)
 
 ## Testing Commands
 
@@ -64,6 +65,33 @@ launchctl list | grep homebrew-updater
 launchctl unload ~/Library/LaunchAgents/com.homebrew-updater.plist
 launchctl load ~/Library/LaunchAgents/com.homebrew-updater.plist
 ```
+
+### Passwordless Sudo Setup (Required for Unattended Operation)
+
+**Problem:** LaunchAgent background processes cannot display GUI password prompts, causing cask upgrades to fail when sudo is required.
+
+**Solution:** Configure `/etc/sudoers.d/homebrew-updater` to allow specific brew-related operations without password.
+
+```bash
+# One-time setup (requires your password)
+./scripts/install_sudoers.sh
+
+# Verify installation
+sudo -n /usr/bin/xargs --help  # Should work without password prompt
+ls -la /etc/sudoers.d/homebrew-updater  # Should show: -r--r----- root wheel
+
+# Test with actual updater
+python3 scripts/homebrew_updater.py
+```
+
+**What operations are allowed passwordless:**
+- File removal operations (`xargs`, `rm`) used by brew cask cleanup
+- Package operations (`pkgutil`, `installer`) for cask installation/removal
+- LaunchAgent management (`launchctl`) for cask services
+
+**Security:** Limited to admin group, specific commands only. See `docs/PASSWORDLESS_SUDO_SETUP.md` for detailed security analysis.
+
+**Troubleshooting:** If cask upgrades still fail with "sudo: a password is required", re-run `./scripts/install_sudoers.sh` and check logs.
 
 ## Architecture
 
@@ -332,6 +360,7 @@ def brew_new_operation() -> Tuple[bool, List[str]]:
 
 - `README.md` - User-facing setup and usage instructions for public GitHub
 - `.env.example` - Environment variable template
+- `docs/PASSWORDLESS_SUDO_SETUP.md` - **Passwordless sudo configuration guide** (required for unattended operation)
 - `docs/SLACK_INTEGRATION.md` - Slack webhook integration guide
 - `docs/TEST_REPORT.md` - Comprehensive test results and coverage
 - `docs/PUSH_NOTIFICATIONS_SOLUTION.md` - Dual notification system details
@@ -340,11 +369,17 @@ def brew_new_operation() -> Tuple[bool, List[str]]:
 - `docs/BADGE_NOTIFICATION_FIX.md` - Content field requirement explanation
 - `docs/DISCORD_PUSH_NOTIFICATION_CHECKLIST.md` - Troubleshooting guide
 
+## Configuration Files
+
+- `config/homebrew-updater.sudoers` - Sudoers template for passwordless sudo
+- `scripts/install_sudoers.sh` - Automated sudoers installation script
+- `launchd/com.homebrew-updater.plist` - LaunchAgent configuration template
+
 ## Legacy Scripts
 
 Located in `scripts/` directory but **not actively used**:
 - `brew_autoupdate` - Original autoupdate script (replaced)
-- `brew_autoupdate_sudo_gui` - Still used for SUDO_ASKPASS GUI prompts
+- `brew_autoupdate_sudo_gui` - SUDO_ASKPASS GUI script (replaced by passwordless sudo)
 - `brew-upgrade-all.sh` - Reference implementation (not scheduled)
 
 These are kept for reference but `homebrew_updater.py` is the active solution.

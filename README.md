@@ -7,7 +7,8 @@ Keep your Homebrew packages and casks up-to-date automatically with smart idle d
 ## ✨ Features
 
 - **🔔 Notification System**: Slack/Discord webhooks + native macOS notifications
-- **🖱️ Intelligent Idle Detection**: Skips sudo-requiring operations when system is idle
+- **🔓 Passwordless Sudo**: Fully unattended cask upgrades via secure sudoers configuration
+- **🖱️ Intelligent Idle Detection**: Optimizes operations based on system activity
 - **👻 Ghost Cask Healing**: Automatically removes broken cask installations
 - **📦 Complete Package Management**: Updates formulae, casks, and cleans up old files
 - **🏥 Health Checks**: Runs `brew doctor` after updates
@@ -123,7 +124,40 @@ Check the logs:
 tail -f ~/Library/Logs/homebrew-updater/homebrew-updater-*.log
 ```
 
-### 4. Install LaunchAgent (Optional)
+### 4. Configure Passwordless Sudo (Required for Unattended Operation)
+
+**⚠️ Important:** Without this setup, cask upgrades requiring sudo will fail when running via LaunchAgent.
+
+LaunchAgent background processes cannot display GUI password prompts. To enable fully unattended cask upgrades, install the passwordless sudo configuration:
+
+```bash
+# Run the automated installer (requires your password once)
+./scripts/install_sudoers.sh
+```
+
+This configures `/etc/sudoers.d/homebrew-updater` to allow specific brew-related operations without password prompts.
+
+**What operations are allowed:**
+- File removal operations used by brew cask cleanup
+- Package installation/uninstallation operations
+- LaunchAgent management for cask services
+
+**Security:** Limited to admin group users and specific command paths only. See [`docs/PASSWORDLESS_SUDO_SETUP.md`](docs/PASSWORDLESS_SUDO_SETUP.md) for detailed security analysis.
+
+**Verify installation:**
+
+```bash
+# These should work without password prompts
+sudo -n /usr/bin/xargs --help
+sudo -n /usr/sbin/pkgutil --pkgs | head -5
+
+# Check the configuration file
+ls -la /etc/sudoers.d/homebrew-updater
+```
+
+**If you skip this step:** Cask upgrades requiring sudo (like Microsoft Office, Logitech Options, etc.) will fail with "sudo: no password was provided" errors.
+
+### 5. Install LaunchAgent (Optional)
 
 To run automatically every day at 10:00 AM:
 
@@ -164,14 +198,16 @@ The updater checks system idle time before running:
 
 - **User Active** (< 5 minutes idle):
   - Updates all formulae
-  - Updates all casks (including those requiring sudo)
+  - Updates all casks
   - Heals ghost casks
   - Full cleanup
 
 - **User Idle** (> 5 minutes idle):
   - Updates formulae only
-  - Skips cask updates (avoids sudo password prompts)
+  - Skips cask updates
   - Skips ghost healing
+
+**Note:** With passwordless sudo configured (see setup step 4), all operations can run unattended regardless of idle state. The idle detection provides an additional safety mechanism to avoid interrupting active work.
 
 ## 📝 How It Works
 
@@ -226,13 +262,19 @@ bash tests/integration_test.sh
 homebrew-updater/
 ├── scripts/
 │   ├── homebrew_updater.py          # Main updater script
-│   └── brew_autoupdate_sudo_gui     # Sudo GUI helper
+│   ├── install_sudoers.sh           # Passwordless sudo installer
+│   └── brew_autoupdate_sudo_gui     # Legacy sudo GUI helper
+├── config/
+│   └── homebrew-updater.sudoers     # Sudoers template
 ├── launchd/
 │   └── com.homebrew-updater.plist   # LaunchAgent configuration
 ├── tests/
 │   ├── test_homebrew_updater.py     # Unit tests
 │   └── integration_test.sh          # Integration tests
-├── docs/                             # Development documentation
+├── docs/
+│   ├── PASSWORDLESS_SUDO_SETUP.md   # Sudo configuration guide
+│   ├── CASK_UPGRADE_FIX.md          # Troubleshooting cask failures
+│   └── ...                          # Additional documentation
 ├── .env.example                      # Environment variable template
 ├── .gitignore
 ├── README.md
@@ -240,6 +282,23 @@ homebrew-updater/
 ```
 
 ## 🔧 Troubleshooting
+
+### Cask upgrades failing with "sudo: no password was provided"
+
+This means passwordless sudo is not configured. **Fix:**
+
+```bash
+# Install passwordless sudo configuration
+./scripts/install_sudoers.sh
+
+# Verify it's working
+sudo -n /usr/bin/xargs --help  # Should not prompt for password
+
+# Check installation
+ls -la /etc/sudoers.d/homebrew-updater
+```
+
+**Why this happens:** LaunchAgent background processes cannot display GUI password prompts. Some casks (like Microsoft Office, Logitech Options) require sudo during installation/removal. See [`docs/PASSWORDLESS_SUDO_SETUP.md`](docs/PASSWORDLESS_SUDO_SETUP.md) for details.
 
 ### No notifications received
 
@@ -298,6 +357,8 @@ MIT License - see LICENSE file for details
 ## 📚 Additional Documentation
 
 See the `docs/` directory for:
+- **[Passwordless Sudo Setup Guide](docs/PASSWORDLESS_SUDO_SETUP.md)** - Required for unattended operation
+- **[Cask Upgrade Fix Report](docs/CASK_UPGRADE_FIX.md)** - Troubleshooting sudo failures
 - Detailed notification system documentation
 - Test reports
 - Development notes

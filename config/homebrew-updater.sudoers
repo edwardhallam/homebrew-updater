@@ -1,0 +1,29 @@
+# Homebrew Updater - Passwordless sudo configuration
+# This file allows brew cask operations to run without password prompts
+# when executed via the homebrew-updater LaunchAgent
+#
+# Installation:
+#   sudo visudo -cf config/homebrew-updater.sudoers  # Validate syntax
+#   sudo cp config/homebrew-updater.sudoers /etc/sudoers.d/homebrew-updater
+#   sudo chmod 0440 /etc/sudoers.d/homebrew-updater
+#
+# Security Note:
+#   - Limited to admin group members
+#   - Only allows specific brew and file removal operations
+#   - Required for unattended cask upgrades in LaunchAgent context
+
+# Allow file removal operations that brew cask uses during cleanup
+# These are the specific commands that brew calls internally with sudo
+# Note: Brew should never be run directly as root, but it calls these commands internally
+%admin ALL=(root) NOPASSWD: /usr/bin/xargs *
+%admin ALL=(root) NOPASSWD: /bin/rm *
+%admin ALL=(root) NOPASSWD: /opt/homebrew/Library/Homebrew/cask/utils/rmdir.sh *
+
+# Allow pkgutil operations for package uninstallation
+%admin ALL=(root) NOPASSWD: /usr/sbin/pkgutil *
+
+# Allow installer operations for package installation
+%admin ALL=(root) NOPASSWD: /usr/sbin/installer *
+
+# Allow launchctl operations for service management
+%admin ALL=(root) NOPASSWD: /bin/launchctl *
