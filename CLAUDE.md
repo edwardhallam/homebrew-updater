@@ -169,8 +169,13 @@ DISCORD_USER_ID = os.getenv("DISCORD_USER_ID", "")  # For @mentions (numeric ID,
 BREW_PATH = os.getenv("BREW_PATH", "/opt/homebrew/bin/brew")
 MAX_LOG_FILES = int(os.getenv("MAX_LOG_FILES", "10"))  # Auto-rotation
 
+# Monthly cleanup reminder
+MONTHLY_CLEANUP_REMINDER_DAY = int(os.getenv("MONTHLY_CLEANUP_REMINDER_DAY", "15"))  # Day of month (1-31)
+ENABLE_MONTHLY_CLEANUP_REMINDER = os.getenv("ENABLE_MONTHLY_CLEANUP_REMINDER", "true").lower() in ("true", "yes", "1")
+
 # Fixed paths
 LOG_DIR = Path.home() / "Library/Logs/homebrew-updater"
+MONTHLY_REMINDER_STATE_FILE = LOG_DIR / ".last_monthly_reminder"  # Tracks last reminder date
 ```
 
 **Configuration sources** (in priority order):
@@ -324,6 +329,34 @@ def brew_new_operation() -> Tuple[bool, List[str]]:
 
     return success, packages if success else []
 ```
+
+### Monthly Cleanup Reminders
+
+The system automatically sends cleanup reminders on a configured day each month to prevent disk space buildup.
+
+**Configuration:**
+- `ENABLE_MONTHLY_CLEANUP_REMINDER` - Enable/disable reminders (default: `true`)
+- `MONTHLY_CLEANUP_REMINDER_DAY` - Day of month 1-31 (default: `15`)
+
+**How it works:**
+1. During daily update run, checks if today is the reminder day
+2. Verifies no reminder was sent already this month (stored in `~/.../homebrew-updater/.last_monthly_reminder`)
+3. If due, sends notification with current cache size and cleanup command
+4. Saves current date to prevent duplicate reminders
+
+**Notification includes:**
+- Current Homebrew cache size
+- Command: `brew cleanup --prune=all`
+- Link to troubleshooting docs
+
+**To change reminder day:**
+```bash
+# In .env file
+MONTHLY_CLEANUP_REMINDER_DAY=1  # Send on 1st of each month
+```
+
+**State tracking:**
+The system uses `~/Library/Logs/homebrew-updater/.last_monthly_reminder` to track when the last reminder was sent. This prevents sending duplicate reminders if the updater runs multiple times on the reminder day.
 
 ## Documentation Files
 

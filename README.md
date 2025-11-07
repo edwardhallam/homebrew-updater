@@ -12,6 +12,7 @@ Keep your Homebrew packages and casks up-to-date automatically with Slack/Discor
 - **📦 Complete Package Management**: Updates formulae, casks, and cleans up old files
 - **🏥 Health Checks**: Runs `brew doctor` after updates
 - **📊 Detailed Reporting**: Shows exactly which packages were upgraded
+- **🗓️ Monthly Cleanup Reminders**: Automatic reminders to prevent disk space buildup
 - **🔐 Secure Configuration**: Environment variables for sensitive data
 - **⏰ Scheduled Execution**: LaunchAgent runs daily at configurable time
 - **🚀 Performance Optimized**: Batch operations for speed
@@ -187,6 +188,8 @@ launchctl list | grep homebrew-updater
 | `DISCORD_USER_ID` | Discord user ID for @mentions | _(none)_ |
 | `BREW_PATH` | Path to Homebrew binary | `/opt/homebrew/bin/brew` |
 | `MAX_LOG_FILES` | Number of log files to retain | `10` |
+| `ENABLE_MONTHLY_CLEANUP_REMINDER` | Enable monthly cleanup reminders | `true` |
+| `MONTHLY_CLEANUP_REMINDER_DAY` | Day of month for cleanup reminder (1-31) | `15` |
 
 ## 📝 How It Works
 
@@ -199,6 +202,7 @@ launchctl list | grep homebrew-updater
 3. **Cleanup**: Removes old downloads and cache files
 4. **Health Check**: Runs `brew doctor` for diagnostics
 5. **Notifications**: Sends detailed summary to Slack/Discord and macOS Notification Center
+6. **Monthly Reminder**: On the 15th of each month, sends a reminder to run `brew cleanup --prune=all` (prevents disk space buildup)
 
 ## 🔔 Notification Examples
 
@@ -260,6 +264,14 @@ homebrew-updater/
 ```
 
 ## 🔧 Troubleshooting
+
+**📖 For detailed troubleshooting, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**
+
+This guide covers:
+- Post-upgrade cleanup warnings and manual cleanup procedures
+- Common sudo permission issues and fixes
+- LaunchAgent debugging steps
+- Monthly maintenance recommendations
 
 ### Cask upgrades failing with "sudo: no password was provided"
 
@@ -335,8 +347,9 @@ MIT License - see LICENSE file for details
 ## 📚 Additional Documentation
 
 See the `docs/` directory for:
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Cleanup warnings, manual fixes, common issues
 - **[Passwordless Sudo Setup Guide](docs/PASSWORDLESS_SUDO_SETUP.md)** - Required for unattended operation
-- **[Cask Upgrade Fix Report](docs/CASK_UPGRADE_FIX.md)** - Troubleshooting sudo failures
+- **[Cask Upgrade Fix Report](docs/CASK_UPGRADE_FIX.md)** - Historical sudo failure troubleshooting
 - Detailed notification system documentation
 - Test reports
 - Development notes

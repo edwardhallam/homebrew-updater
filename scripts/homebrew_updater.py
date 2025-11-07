@@ -57,6 +57,11 @@ BREW_PATH = os.getenv("BREW_PATH", "/opt/homebrew/bin/brew")
 LOG_DIR = Path.home() / "Library/Logs/homebrew-updater"
 MAX_LOG_FILES = int(os.getenv("MAX_LOG_FILES", "10"))
 
+# Monthly cleanup reminder
+MONTHLY_CLEANUP_REMINDER_DAY = int(os.getenv("MONTHLY_CLEANUP_REMINDER_DAY", "15"))
+ENABLE_MONTHLY_CLEANUP_REMINDER = os.getenv("ENABLE_MONTHLY_CLEANUP_REMINDER", "true").lower() in ("true", "yes", "1")
+MONTHLY_REMINDER_STATE_FILE = LOG_DIR / ".last_monthly_reminder"
+
 # Environment setup
 BREW_ENV = {
     "PATH": "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -302,6 +307,83 @@ def send_discord_notification(message: str, error: bool = False):
     send_notification(message, error)
 
 # ============================================================================
+# MONTHLY CLEANUP REMINDER
+# ============================================================================
+
+def get_last_reminder_date() -> Optional[str]:
+    """Get the date of the last monthly reminder (YYYY-MM-DD)"""
+    try:
+        if MONTHLY_REMINDER_STATE_FILE.exists():
+            return MONTHLY_REMINDER_STATE_FILE.read_text().strip()
+    except Exception as e:
+        log(f"Failed to read last reminder date: {e}", "WARN")
+    return None
+
+def save_last_reminder_date(date_str: str):
+    """Save the date of the last monthly reminder"""
+    try:
+        MONTHLY_REMINDER_STATE_FILE.write_text(date_str)
+        log(f"Saved monthly reminder date: {date_str}")
+    except Exception as e:
+        log(f"Failed to save reminder date: {e}", "WARN")
+
+def should_send_monthly_reminder() -> bool:
+    """Check if we should send the monthly cleanup reminder today"""
+    if not ENABLE_MONTHLY_CLEANUP_REMINDER:
+        return False
+
+    today = datetime.now()
+
+    # Check if today is the reminder day
+    if today.day != MONTHLY_CLEANUP_REMINDER_DAY:
+        return False
+
+    # Check if we already sent a reminder this month
+    last_reminder = get_last_reminder_date()
+    if last_reminder:
+        try:
+            last_date = datetime.strptime(last_reminder, "%Y-%m-%d")
+            # Don't send if we already sent one this month
+            if last_date.year == today.year and last_date.month == today.month:
+                return False
+        except ValueError:
+            log(f"Invalid last reminder date format: {last_reminder}", "WARN")
+
+    return True
+
+def send_monthly_cleanup_reminder():
+    """Send monthly cleanup reminder notification"""
+    log("Sending monthly cleanup reminder...")
+
+    # Get disk usage stats
+    try:
+        result = subprocess.run(
+            ["du", "-sh", "/opt/homebrew/Library/Caches/Homebrew"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        cache_size = result.stdout.split()[0] if result.returncode == 0 else "unknown"
+    except Exception:
+        cache_size = "unknown"
+
+    message = "🗓️ **Monthly Homebrew Cleanup Reminder**\n\n"
+    message += "It's time for your monthly Homebrew maintenance!\n\n"
+    message += f"📊 **Current cache size:** {cache_size}\n\n"
+    message += "**Recommended action:**\n"
+    message += "```\nbrew cleanup --prune=all\n```\n\n"
+    message += "This will:\n"
+    message += "  • Remove old formula versions\n"
+    message += "  • Clean up cached downloads\n"
+    message += "  • Free up disk space\n\n"
+    message += "See `docs/TROUBLESHOOTING.md` for more details."
+
+    send_notification(message)
+
+    # Save today's date as the last reminder date
+    save_last_reminder_date(datetime.now().strftime("%Y-%m-%d"))
+
+# ============================================================================
 # HOMEBREW OPERATIONS
 # ============================================================================
 
@@ -470,8 +552,8 @@ def brew_upgrade_formulae() -> Tuple[bool, List[str]]:
     success, _ = run_brew_command(["upgrade", "--formula"])
     return success, outdated_formulae if success else []
 
-def brew_upgrade_casks() -> Tuple[bool, List[str]]:
-    """Upgrade all casks with greedy flag and return list of upgraded casks"""
+def brew_upgrade_casks() -> Tuple[bool, List[str], List[str]]:
+    """Upgrade all casks with greedy flag and return (success, upgraded_casks, casks_with_warnings)"""
     log("Upgrading casks...")
 
     # First check what's outdated
@@ -480,7 +562,7 @@ def brew_upgrade_casks() -> Tuple[bool, List[str]]:
 
     if not outdated_casks:
         log("No outdated casks")
-        return True, []
+        return True, [], []
 
     log(f"Found {len(outdated_casks)} outdated casks: {', '.join(outdated_casks)}")
 
@@ -506,16 +588,19 @@ def brew_upgrade_casks() -> Tuple[bool, List[str]]:
                 if cask_name in outdated_casks and cask_name not in successfully_upgraded:
                     successfully_upgraded.append(cask_name)
 
+    # Determine which casks had post-upgrade warnings (upgraded but with cleanup errors)
+    casks_with_warnings = []
+    if successfully_upgraded and len(successfully_upgraded) < len(outdated_casks):
+        casks_with_warnings = list(set(outdated_casks) - set(successfully_upgraded))
+        log(f"Casks with post-upgrade cleanup warnings: {', '.join(casks_with_warnings)}", "WARN")
+
     # If we upgraded at least one cask, consider it a success
     if successfully_upgraded:
         log(f"Successfully upgraded {len(successfully_upgraded)} cask(s): {', '.join(successfully_upgraded)}")
-        if len(successfully_upgraded) < len(outdated_casks):
-            failed = set(outdated_casks) - set(successfully_upgraded)
-            log(f"Some casks had post-upgrade errors: {', '.join(failed)}", "WARN")
-        return True, successfully_upgraded
+        return True, successfully_upgraded, casks_with_warnings
 
     # If nothing was upgraded, return the original result
-    return success, outdated_casks if success else []
+    return success, outdated_casks if success else [], []
 
 def brew_cleanup():
     """Clean up old downloads and cache aggressively"""
@@ -565,7 +650,7 @@ def main():
             return 1
 
         # Upgrade casks
-        success, upgraded_casks = brew_upgrade_casks()
+        success, upgraded_casks, casks_with_warnings = brew_upgrade_casks()
         if not success:
             error_msg = "Failed to upgrade casks"
             log(error_msg, "ERROR")
@@ -582,10 +667,15 @@ def main():
         log("=" * 80)
         log("Homebrew update completed successfully")
         log(f"Upgraded: {len(upgraded_formulae)} formulae, {len(upgraded_casks)} casks")
+        if casks_with_warnings:
+            log(f"Casks with cleanup warnings: {len(casks_with_warnings)}")
         log("=" * 80)
 
         # Build detailed summary
-        summary = "✅ **Homebrew Update Complete!**\n\n"
+        if casks_with_warnings:
+            summary = "✅ **Homebrew Update Complete!** ⚠️ (with minor cleanup warnings)\n\n"
+        else:
+            summary = "✅ **Homebrew Update Complete!**\n\n"
 
         if upgraded_formulae:
             summary += f"📦 **Formulae Upgraded ({len(upgraded_formulae)}):**\n"
@@ -609,9 +699,25 @@ def main():
                 summary += f"  • {ghost}\n"
             summary += "\n"
 
-        summary += f"🧹 **Cleanup:** Complete"
+        summary += f"🧹 **Cleanup:** Complete\n\n"
+
+        # Add cleanup warnings section if any casks had issues
+        if casks_with_warnings:
+            summary += f"⚠️ **Post-Upgrade Cleanup Warnings ({len(casks_with_warnings)}):**\n"
+            summary += "The following casks upgraded successfully but had minor cleanup issues:\n"
+            for cask in casks_with_warnings:
+                summary += f"  • {cask}\n"
+            summary += "\n**Manual Cleanup (optional):**\n"
+            summary += "These warnings are usually harmless (empty directories left behind).\n"
+            summary += "To clean up manually, run:\n"
+            summary += f"```\nbrew cleanup {' '.join(casks_with_warnings)}\n```\n"
+            summary += "Or see: docs/TROUBLESHOOTING.md"
 
         send_notification(summary)
+
+        # Check if we should send monthly cleanup reminder
+        if should_send_monthly_reminder():
+            send_monthly_cleanup_reminder()
 
         return 0
 

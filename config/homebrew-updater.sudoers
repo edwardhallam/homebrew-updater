@@ -18,7 +18,7 @@
 # SETENV allows brew to use sudo -E (preserve environment) which is needed for cleanup
 %admin ALL=(root) SETENV: NOPASSWD: /usr/bin/xargs *
 %admin ALL=(root) SETENV: NOPASSWD: /bin/rm *
-%admin ALL=(root) SETENV: NOPASSWD: /bin/rmdir *
+%admin ALL=(root) SETENV: NOPASSWD: /usr/bin/rmdir *
 %admin ALL=(root) SETENV: NOPASSWD: /opt/homebrew/Library/Homebrew/cask/utils/rmdir.sh *
 
 # Allow pkgutil operations for package uninstallation

@@ -252,16 +252,34 @@ class TestBrewCommands(unittest.TestCase):
 
     @patch('homebrew_updater.run_brew_command')
     def test_brew_upgrade_casks_success(self, mock_run_brew):
-        """Test brew upgrade casks"""
+        """Test brew upgrade casks with successful upgrades"""
         mock_run_brew.side_effect = [
             (True, "cask1\ncask2"),  # outdated
-            (True, "Upgraded")  # upgrade
+            (True, "✔︎ Cask cask1 (1.0.0)\n✔︎ Cask cask2 (2.0.0)")  # upgrade with success indicators
         ]
 
-        success, casks = homebrew_updater.brew_upgrade_casks()
+        success, casks, warnings = homebrew_updater.brew_upgrade_casks()
         self.assertTrue(success)
         self.assertEqual(len(casks), 2)
         self.assertIn("cask1", casks)
+        self.assertIn("cask2", casks)
+        self.assertEqual(len(warnings), 0)  # No warnings when all casks upgrade cleanly
+
+    @patch('homebrew_updater.run_brew_command')
+    def test_brew_upgrade_casks_with_warnings(self, mock_run_brew):
+        """Test brew upgrade casks with partial success (some cleanup warnings)"""
+        mock_run_brew.side_effect = [
+            (True, "cask1\ncask2\ncask3"),  # 3 outdated casks
+            (False, "✔︎ Cask cask1 (1.0.0)\n✔︎ Cask cask2 (2.0.0)\nError: cask3 cleanup failed")  # 2 succeed, 1 has warnings
+        ]
+
+        success, casks, warnings = homebrew_updater.brew_upgrade_casks()
+        self.assertTrue(success)  # Overall success because some casks upgraded
+        self.assertEqual(len(casks), 2)  # Two casks upgraded successfully
+        self.assertIn("cask1", casks)
+        self.assertIn("cask2", casks)
+        self.assertEqual(len(warnings), 1)  # One cask had warnings
+        self.assertIn("cask3", warnings)
 
 
 class TestGhostCaskHealing(unittest.TestCase):
@@ -348,7 +366,7 @@ class TestMainFlow(unittest.TestCase):
         mock_update.return_value = True
         mock_heal.return_value = ["ghost-cask"]
         mock_upgrade_formulae.return_value = (True, ["pkg1", "pkg2", "pkg3", "pkg4", "pkg5"])
-        mock_upgrade_casks.return_value = (True, ["cask1", "cask2", "cask3"])
+        mock_upgrade_casks.return_value = (True, ["cask1", "cask2", "cask3"], [])  # No warnings
 
         result = homebrew_updater.main()
 
@@ -375,6 +393,110 @@ class TestMainFlow(unittest.TestCase):
             call.kwargs.get('error', False)
             for call in mock_notification.call_args_list
         ))
+
+
+class TestMonthlyReminder(unittest.TestCase):
+    """Test monthly cleanup reminder functionality"""
+
+    @patch('homebrew_updater.datetime')
+    @patch('homebrew_updater.MONTHLY_CLEANUP_REMINDER_DAY', 15)
+    @patch('homebrew_updater.ENABLE_MONTHLY_CLEANUP_REMINDER', True)
+    @patch('homebrew_updater.get_last_reminder_date')
+    def test_should_send_reminder_on_reminder_day(self, mock_get_last, mock_datetime_module):
+        """Test that reminder should be sent on the 15th"""
+        from datetime import datetime
+        # Mock today as the 15th
+        mock_now = Mock()
+        mock_now.day = 15
+        mock_now.year = 2025
+        mock_now.month = 11
+        mock_datetime_module.now.return_value = mock_now
+
+        # Mock strptime to return a datetime object for last month's reminder
+        mock_last_date = datetime(2025, 10, 15)
+        mock_datetime_module.strptime.return_value = mock_last_date
+
+        # No previous reminder this month
+        mock_get_last.return_value = "2025-10-15"  # Last month
+
+        result = homebrew_updater.should_send_monthly_reminder()
+        self.assertTrue(result)
+
+    @patch('homebrew_updater.datetime')
+    @patch('homebrew_updater.MONTHLY_CLEANUP_REMINDER_DAY', 15)
+    @patch('homebrew_updater.ENABLE_MONTHLY_CLEANUP_REMINDER', True)
+    @patch('homebrew_updater.get_last_reminder_date')
+    def test_should_not_send_reminder_on_wrong_day(self, mock_get_last, mock_datetime_module):
+        """Test that reminder is not sent on other days"""
+        from datetime import datetime
+        # Mock today as the 14th
+        mock_now = Mock()
+        mock_now.day = 14
+        mock_now.year = 2025
+        mock_now.month = 11
+        mock_datetime_module.now.return_value = mock_now
+
+        result = homebrew_updater.should_send_monthly_reminder()
+        self.assertFalse(result)
+
+    @patch('homebrew_updater.datetime')
+    @patch('homebrew_updater.MONTHLY_CLEANUP_REMINDER_DAY', 15)
+    @patch('homebrew_updater.ENABLE_MONTHLY_CLEANUP_REMINDER', True)
+    @patch('homebrew_updater.get_last_reminder_date')
+    def test_should_not_send_reminder_twice_same_month(self, mock_get_last, mock_datetime_module):
+        """Test that reminder is not sent twice in the same month"""
+        from datetime import datetime
+        # Mock today as the 15th
+        mock_now = Mock()
+        mock_now.day = 15
+        mock_now.year = 2025
+        mock_now.month = 11
+        mock_datetime_module.now.return_value = mock_now
+
+        # Mock strptime to return a datetime object for the last reminder date
+        mock_last_date = datetime(2025, 11, 15)
+        mock_datetime_module.strptime.return_value = mock_last_date
+
+        # Already sent reminder this month
+        mock_get_last.return_value = "2025-11-15"
+
+        result = homebrew_updater.should_send_monthly_reminder()
+        self.assertFalse(result)
+
+    @patch('homebrew_updater.ENABLE_MONTHLY_CLEANUP_REMINDER', False)
+    def test_should_not_send_when_disabled(self):
+        """Test that reminder is not sent when disabled"""
+        result = homebrew_updater.should_send_monthly_reminder()
+        self.assertFalse(result)
+
+    @patch('homebrew_updater.subprocess.run')
+    @patch('homebrew_updater.send_notification')
+    @patch('homebrew_updater.save_last_reminder_date')
+    @patch('homebrew_updater.datetime')
+    def test_send_monthly_cleanup_reminder(self, mock_datetime_module, mock_save, mock_notification, mock_subprocess):
+        """Test sending monthly cleanup reminder"""
+        from datetime import datetime
+        # Mock subprocess to return cache size
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "1.5G\t/opt/homebrew/Library/Caches/Homebrew"
+        mock_subprocess.return_value = mock_result
+
+        # Mock datetime for saving
+        mock_now = datetime(2025, 11, 15, 10, 0, 0)
+        mock_datetime_module.now.return_value = mock_now
+
+        homebrew_updater.send_monthly_cleanup_reminder()
+
+        # Verify notification was sent with correct content
+        mock_notification.assert_called_once()
+        notification_msg = mock_notification.call_args[0][0]
+        self.assertIn("Monthly Homebrew Cleanup Reminder", notification_msg)
+        self.assertIn("1.5G", notification_msg)
+        self.assertIn("brew cleanup --prune=all", notification_msg)
+
+        # Verify date was saved
+        mock_save.assert_called_once_with("2025-11-15")
 
 
 if __name__ == '__main__':
