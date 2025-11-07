@@ -483,7 +483,38 @@ def brew_upgrade_casks() -> Tuple[bool, List[str]]:
         return True, []
 
     log(f"Found {len(outdated_casks)} outdated casks: {', '.join(outdated_casks)}")
-    success, _ = run_brew_command(["upgrade", "--cask", "--greedy"])
+
+    # Run upgrade (may have non-zero exit code due to cleanup failures, but upgrades may still succeed)
+    success, upgrade_output = run_brew_command(["upgrade", "--cask", "--greedy"], check=False)
+
+    # Parse output to find actually upgraded casks (look for success indicators)
+    # Brew shows "✔︎ Cask name (version)" or "🍺 name was successfully upgraded!"
+    successfully_upgraded = []
+    for line in upgrade_output.splitlines():
+        # Look for the checkmark indicator: "✔︎ Cask name (version)"
+        if "✔︎ Cask" in line or "✔︎  Cask" in line:
+            parts = line.split()
+            if len(parts) >= 3:
+                cask_name = parts[2]  # "✔︎ Cask name (version)"
+                if cask_name in outdated_casks and cask_name not in successfully_upgraded:
+                    successfully_upgraded.append(cask_name)
+        # Also look for beer mug indicator: "🍺 name was successfully upgraded!"
+        elif "🍺" in line and "successfully upgraded" in line:
+            parts = line.split()
+            if len(parts) >= 2:
+                cask_name = parts[1]
+                if cask_name in outdated_casks and cask_name not in successfully_upgraded:
+                    successfully_upgraded.append(cask_name)
+
+    # If we upgraded at least one cask, consider it a success
+    if successfully_upgraded:
+        log(f"Successfully upgraded {len(successfully_upgraded)} cask(s): {', '.join(successfully_upgraded)}")
+        if len(successfully_upgraded) < len(outdated_casks):
+            failed = set(outdated_casks) - set(successfully_upgraded)
+            log(f"Some casks had post-upgrade errors: {', '.join(failed)}", "WARN")
+        return True, successfully_upgraded
+
+    # If nothing was upgraded, return the original result
     return success, outdated_casks if success else []
 
 def brew_cleanup():
