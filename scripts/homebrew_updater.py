@@ -50,9 +50,6 @@ SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 # Determines which webhook(s) to use for notifications
 NOTIFICATION_PLATFORM = os.getenv("NOTIFICATION_PLATFORM", "discord").lower()
 
-# Idle threshold in seconds (default: 5 minutes)
-IDLE_THRESHOLD_SECONDS = int(os.getenv("IDLE_THRESHOLD_SECONDS", "300"))
-
 # Homebrew paths
 BREW_PATH = os.getenv("BREW_PATH", "/opt/homebrew/bin/brew")
 SUDO_GUI_SCRIPT = Path(__file__).parent / "brew_autoupdate_sudo_gui"
@@ -309,42 +306,6 @@ def send_discord_notification(message: str, error: bool = False):
     send_notification(message, error)
 
 # ============================================================================
-# IDLE DETECTION
-# ============================================================================
-
-def get_idle_time_seconds() -> Optional[int]:
-    """Get system idle time in seconds using ioreg"""
-    try:
-        result = subprocess.run(
-            ["ioreg", "-c", "IOHIDSystem"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-
-        # Look for HIDIdleTime in output
-        match = re.search(r'"HIDIdleTime"\s*=\s*(\d+)', result.stdout)
-        if match:
-            # HIDIdleTime is in nanoseconds
-            idle_ns = int(match.group(1))
-            idle_seconds = idle_ns / 1_000_000_000
-            return int(idle_seconds)
-    except Exception as e:
-        log(f"Failed to get idle time: {e}", "ERROR")
-
-    return None
-
-def is_user_idle() -> bool:
-    """Check if user has been idle for more than threshold"""
-    idle_seconds = get_idle_time_seconds()
-    if idle_seconds is None:
-        log("Could not determine idle time, assuming user is present", "WARN")
-        return False
-
-    log(f"System idle time: {idle_seconds} seconds")
-    return idle_seconds > IDLE_THRESHOLD_SECONDS
-
-# ============================================================================
 # HOMEBREW OPERATIONS
 # ============================================================================
 
@@ -390,7 +351,7 @@ def get_caskroom_path() -> Path:
         return Path(output.strip())
     return Path("/opt/homebrew/Caskroom")
 
-def heal_ghost_casks(skip_sudo: bool = False) -> List[str]:
+def heal_ghost_casks() -> List[str]:
     """Remove ghost casks that are installed in Homebrew but missing from system"""
     log("Scanning for ghost casks...")
 
@@ -482,13 +443,10 @@ def heal_ghost_casks(skip_sudo: bool = False) -> List[str]:
         log(f"Found {len(ghost_casks)} ghost cask(s): {', '.join(ghost_casks)}")
 
         for cask in ghost_casks:
-            if skip_sudo:
-                log(f"Skipping ghost removal (requires sudo): {cask}", "WARN")
-            else:
-                log(f"Removing ghost cask: {cask}")
-                success, _ = run_brew_command(["uninstall", "--cask", "--force", "--zap", cask], check=False)
-                if success:
-                    removed_casks.append(cask)
+            log(f"Removing ghost cask: {cask}")
+            success, _ = run_brew_command(["uninstall", "--cask", "--force", "--zap", cask], check=False)
+            if success:
+                removed_casks.append(cask)
     else:
         log("No ghost casks found")
 
@@ -561,47 +519,31 @@ def main():
     send_notification("🚀 Starting Homebrew update...")
 
     try:
-        # Check if user is idle
-        user_idle = is_user_idle()
-
-        if user_idle:
-            log("User is idle - will skip cask updates requiring sudo")
-            send_notification("⏸️ User idle - running formulae updates only")
-        else:
-            log("User is active - proceeding with full update")
-
         # Update Homebrew
         if not brew_update():
             error_msg = "Failed to update Homebrew"
             log(error_msg, "ERROR")
-            sudo_status = "🔐 Cask operations were skipped (user idle)" if user_idle else "🔐 Cask operations would have been attempted"
-            send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
+            send_notification(f"❌ {error_msg}", error=True)
             return 1
 
-        # Heal ghost casks (skip if idle to avoid potential sudo prompts)
-        removed_ghosts = heal_ghost_casks(skip_sudo=user_idle)
+        # Heal ghost casks
+        removed_ghosts = heal_ghost_casks()
 
         # Upgrade formulae
         success, upgraded_formulae = brew_upgrade_formulae()
         if not success:
             error_msg = "Failed to upgrade formulae"
             log(error_msg, "ERROR")
-            sudo_status = "🔐 Cask operations were skipped (user idle)" if user_idle else "🔐 Ghost healing was attempted (may or may not have required sudo)"
-            send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
+            send_notification(f"❌ {error_msg}", error=True)
             return 1
 
-        upgraded_casks = []
-        if not user_idle:
-            # Upgrade casks (only if user is not idle)
-            success, upgraded_casks = brew_upgrade_casks()
-            if not success:
-                error_msg = "Failed to upgrade casks"
-                log(error_msg, "ERROR")
-                sudo_status = "🔐 Ghost healing & cask upgrades were attempted (may or may not have required sudo)"
-                send_notification(f"❌ {error_msg}\n\n{sudo_status}", error=True)
-                return 1
-        else:
-            log("Skipping cask updates (user idle)")
+        # Upgrade casks
+        success, upgraded_casks = brew_upgrade_casks()
+        if not success:
+            error_msg = "Failed to upgrade casks"
+            log(error_msg, "ERROR")
+            send_notification(f"❌ {error_msg}", error=True)
+            return 1
 
         # Cleanup
         brew_cleanup()
@@ -615,7 +557,7 @@ def main():
         log(f"Upgraded: {len(upgraded_formulae)} formulae, {len(upgraded_casks)} casks")
         log("=" * 80)
 
-        # Build detailed summary for Discord
+        # Build detailed summary
         summary = "✅ **Homebrew Update Complete!**\n\n"
 
         if upgraded_formulae:
@@ -626,16 +568,13 @@ def main():
         else:
             summary += "📦 **Formulae:** None to upgrade\n\n"
 
-        if not user_idle:
-            if upgraded_casks:
-                summary += f"🍺 **Casks Upgraded ({len(upgraded_casks)}):**\n"
-                for cask in upgraded_casks:
-                    summary += f"  • {cask}\n"
-                summary += "\n"
-            else:
-                summary += "🍺 **Casks:** None to upgrade\n\n"
+        if upgraded_casks:
+            summary += f"🍺 **Casks Upgraded ({len(upgraded_casks)}):**\n"
+            for cask in upgraded_casks:
+                summary += f"  • {cask}\n"
+            summary += "\n"
         else:
-            summary += "⏸️ **Casks:** Skipped (user idle)\n\n"
+            summary += "🍺 **Casks:** None to upgrade\n\n"
 
         if removed_ghosts:
             summary += f"👻 **Ghost Casks Removed ({len(removed_ghosts)}):**\n"
@@ -643,13 +582,7 @@ def main():
                 summary += f"  • {ghost}\n"
             summary += "\n"
 
-        summary += f"🧹 **Cleanup:** Complete\n"
-
-        # Add cask operation status
-        if user_idle:
-            summary += f"🔐 **Cask Operations:** Skipped (user idle)"
-        else:
-            summary += f"🔐 **Cask Operations:** Completed (sudo only if required by system)"
+        summary += f"🧹 **Cleanup:** Complete"
 
         send_notification(summary)
 
@@ -658,13 +591,7 @@ def main():
     except Exception as e:
         error_msg = f"Unexpected error: {e}"
         log(error_msg, "ERROR")
-        # Try to get operation status (user_idle may not be defined if error occurred very early)
-        try:
-            operation_status = "🔐 Cask operations were skipped (user idle)" if user_idle else "🔐 Cask operations may have been partially completed"
-            send_notification(f"❌ {error_msg}\n\n{operation_status}", error=True)
-        except NameError:
-            # user_idle not defined, error occurred before idle check
-            send_discord_notification(f"❌ {error_msg}\n\n🔐 Operation status unknown (error occurred during initialization)", error=True)
+        send_notification(f"❌ {error_msg}", error=True)
         return 1
 
 if __name__ == "__main__":

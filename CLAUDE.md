@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This repository contains an automated Homebrew updater for macOS that runs daily via LaunchAgent. The system features a **dual notification architecture** (Slack/Discord webhooks + macOS native notifications), flexible platform support, intelligent idle detection for sudo operations, automatic ghost cask healing, and **passwordless sudo** configuration for unattended cask upgrades.
+This repository contains an automated Homebrew updater for macOS that runs daily via LaunchAgent. The system features a **dual notification architecture** (Slack/Discord webhooks + macOS native notifications), flexible platform support, automatic ghost cask healing, and **passwordless sudo** configuration for unattended cask upgrades.
 
 **Active Script:** `scripts/homebrew_updater.py` (Python 3)
 **Scheduled Via:** `launchd/com.homebrew-updater.plist` (daily at 10:00 AM)
@@ -15,10 +15,10 @@ This repository contains an automated Homebrew updater for macOS that runs daily
 
 ### Run All Tests
 ```bash
-# Unit tests (24 tests)
+# Unit tests (23 tests)
 python3 tests/test_homebrew_updater.py
 
-# Integration tests (8 checks)
+# Integration tests (7 checks)
 bash tests/integration_test.sh
 
 # View comprehensive test report
@@ -35,9 +35,6 @@ python3 tests/test_discord_webhook.py
 
 # Test dual notification system (sends 4 test notifications)
 python3 tests/test_push_notifications.py
-
-# Run single unit test class
-python3 tests/test_homebrew_updater.py TestIdleDetection
 ```
 
 ### Manual Execution
@@ -124,29 +121,21 @@ send_notification(message, error=False)
 - `discord` - Discord webhooks only
 - `both` - Send to both Slack AND Discord
 
-### Idle Detection Flow
+### Execution Flow
 
-The script checks user activity before running sudo operations:
+The script runs all operations unattended with passwordless sudo:
 
 ```
 main()
   ↓
-is_user_idle() → get_idle_time_seconds()
-  ↓
-if IDLE (>5 min):
   ├─ brew update
-  ├─ brew upgrade --formula (no sudo)
-  └─ Skip: casks, ghost healing
-
-if ACTIVE (<5 min):
-  ├─ brew update
-  ├─ heal_ghost_casks() (may require sudo)
+  ├─ heal_ghost_casks() (passwordless sudo)
   ├─ brew upgrade --formula
-  ├─ brew upgrade --cask --greedy (may require sudo)
+  ├─ brew upgrade --cask --greedy (passwordless sudo)
   └─ brew cleanup -s
 ```
 
-**Rationale:** When idle, the script avoids operations requiring GUI password prompts. When active, it performs full updates with `SUDO_ASKPASS` pointing to `brew_autoupdate_sudo_gui` for GUI prompts.
+**Note:** All operations run unattended using passwordless sudo configuration in `/etc/sudoers.d/homebrew-updater`. No user interaction or password prompts are required.
 
 ### Return Type Conventions
 
@@ -157,7 +146,7 @@ if ACTIVE (<5 min):
 def brew_upgrade_formulae() -> Tuple[bool, List[str]]:
     # Returns: (success, ["python@3.12", "git", "wget"])
 
-def heal_ghost_casks(skip_sudo: bool) -> List[str]:
+def heal_ghost_casks() -> List[str]:
     # Returns: ["broken-app", "missing-cask"]
 
 # INCORRECT (old pattern)
@@ -166,20 +155,6 @@ def brew_upgrade_formulae() -> Tuple[bool, int]:
 ```
 
 This allows Discord notifications to show **every upgraded package by name** rather than just counts.
-
-### Sudo Status Notifications
-
-**All notifications** (success and error) include a status line indicating whether sudo operations were executed:
-
-**Success Notifications:**
-- When idle: `🔐 Sudo Operations: Skipped (user idle)`
-- When active: `🔐 Sudo Operations: Executed (casks & ghost healing)`
-
-**Error Notifications:**
-- When idle: `🔐 Sudo operations were skipped (user idle)`
-- When active: Varies based on where error occurred (e.g., "executed for ghost healing", "may have been partially executed", etc.)
-
-This helps users understand if password prompts were required and what operations ran with elevated privileges.
 
 ### Configuration Variables
 
@@ -191,12 +166,10 @@ NOTIFICATION_PLATFORM = os.getenv("NOTIFICATION_PLATFORM", "discord").lower()  #
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")  # Required for Slack
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")  # Required for Discord
 DISCORD_USER_ID = os.getenv("DISCORD_USER_ID", "")  # For @mentions (numeric ID, not username)
-IDLE_THRESHOLD_SECONDS = int(os.getenv("IDLE_THRESHOLD_SECONDS", "300"))  # Default: 5 minutes
 BREW_PATH = os.getenv("BREW_PATH", "/opt/homebrew/bin/brew")
 MAX_LOG_FILES = int(os.getenv("MAX_LOG_FILES", "10"))  # Auto-rotation
 
 # Fixed paths
-SUDO_GUI_SCRIPT = Path(__file__).parent / "brew_autoupdate_sudo_gui"
 LOG_DIR = Path.home() / "Library/Logs/homebrew-updater"
 ```
 
@@ -311,7 +284,7 @@ send_notification(message, error=False)
 # macOS notification always sent regardless of platform
 ```
 
-2. Use emojis for visual categorization (🚀 start, ✅ success, ❌ error, ⏸️ idle, 👻 ghost, 🧹 cleanup)
+2. Use emojis for visual categorization (🚀 start, ✅ success, ❌ error, 👻 ghost, 🧹 cleanup)
 
 ### Switching Notification Platforms
 
@@ -321,10 +294,6 @@ Change `NOTIFICATION_PLATFORM` in `.env` file or environment:
 - `both` - Send to both platforms
 
 **Note:** Backwards compatibility maintained - `send_discord_notification()` still works but now routes through `send_notification()`.
-
-### Changing Idle Threshold
-
-Set `IDLE_THRESHOLD_SECONDS` environment variable in `.env` file or LaunchAgent plist. Default: 300 seconds (5 minutes).
 
 ### Modifying Schedule
 

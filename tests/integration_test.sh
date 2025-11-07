@@ -98,27 +98,10 @@ else
     log_success "Discord webhook configured"
 fi
 
-# Test 4: Check idle detection
+# Test 4: Check log directory
 echo ""
 echo "=========================================="
-echo "Test 4: Idle Detection"
-echo "=========================================="
-IDLE_TIME=$(python3 -c "import sys; sys.path.insert(0, '$PROJECT_DIR/scripts'); import homebrew_updater; print(homebrew_updater.get_idle_time_seconds() or 0)")
-log_info "Current idle time: ${IDLE_TIME} seconds"
-
-if [[ "$IDLE_TIME" -gt 300 ]]; then
-    log_info "System is IDLE (>${IDLE_THRESHOLD}s)"
-    USER_STATE="idle"
-else
-    log_info "System is ACTIVE (<${IDLE_THRESHOLD}s)"
-    USER_STATE="active"
-fi
-log_success "Idle detection working"
-
-# Test 5: Check log directory
-echo ""
-echo "=========================================="
-echo "Test 5: Log Directory"
+echo "Test 4: Log Directory"
 echo "=========================================="
 if [[ -d "$LOG_DIR" ]]; then
     log_info "Log directory exists: $LOG_DIR"
@@ -129,28 +112,25 @@ else
 fi
 log_success "Log directory check complete"
 
-# Test 6: Check sudo GUI script
+# Test 5: Check passwordless sudo configuration
 echo ""
 echo "=========================================="
-echo "Test 6: Sudo GUI Helper Script"
+echo "Test 5: Passwordless Sudo Configuration"
 echo "=========================================="
-SUDO_GUI_SCRIPT="$PROJECT_DIR/scripts/brew_autoupdate_sudo_gui"
-if [[ -f "$SUDO_GUI_SCRIPT" ]]; then
-    if [[ -x "$SUDO_GUI_SCRIPT" ]]; then
-        log_success "Sudo GUI script exists and is executable"
-    else
-        log_warn "Sudo GUI script exists but is not executable"
-        chmod +x "$SUDO_GUI_SCRIPT"
-        log_info "Made sudo GUI script executable"
-    fi
+SUDOERS_FILE="/etc/sudoers.d/homebrew-updater"
+if [[ -f "$SUDOERS_FILE" ]]; then
+    log_success "Passwordless sudo configured: $SUDOERS_FILE"
+    log_info "Cask upgrades will run unattended without password prompts"
 else
-    log_warn "Sudo GUI script not found (GUI password prompts may not work)"
+    log_warn "Passwordless sudo NOT configured"
+    log_warn "Run ./scripts/install_sudoers.sh to enable unattended operation"
+    log_warn "Without this, cask upgrades may fail in background LaunchAgent"
 fi
 
-# Test 7: Dry run test
+# Test 6: Dry run test
 echo ""
 echo "=========================================="
-echo "Test 7: Dry Run Test (User: $USER_STATE)"
+echo "Test 6: Dry Run Test"
 echo "=========================================="
 log_info "This test will run the updater script"
 log_info "Check Discord for notifications"
@@ -186,10 +166,10 @@ else
     fi
 fi
 
-# Test 8: Log rotation test
+# Test 7: Log rotation test
 echo ""
 echo "=========================================="
-echo "Test 8: Log Rotation"
+echo "Test 7: Log Rotation"
 echo "=========================================="
 if [[ -d "$LOG_DIR" ]]; then
     LOG_COUNT=$(ls -1 "$LOG_DIR"/homebrew-updater-*.log 2>/dev/null | wc -l | xargs)

@@ -18,60 +18,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import homebrew_updater
 
 
-class TestIdleDetection(unittest.TestCase):
-    """Test idle detection functionality"""
-
-    @patch('homebrew_updater.subprocess.run')
-    def test_get_idle_time_active(self, mock_run):
-        """Test idle time when user is active (< 5 min)"""
-        # Simulate 2 minutes idle (120 seconds = 120000000000 nanoseconds)
-        mock_run.return_value = Mock(
-            stdout='"HIDIdleTime" = 120000000000',
-            returncode=0
-        )
-
-        idle_time = homebrew_updater.get_idle_time_seconds()
-        self.assertEqual(idle_time, 120)
-
-    @patch('homebrew_updater.subprocess.run')
-    def test_get_idle_time_idle(self, mock_run):
-        """Test idle time when user is idle (> 5 min)"""
-        # Simulate 10 minutes idle (600 seconds = 600000000000 nanoseconds)
-        mock_run.return_value = Mock(
-            stdout='"HIDIdleTime" = 600000000000',
-            returncode=0
-        )
-
-        idle_time = homebrew_updater.get_idle_time_seconds()
-        self.assertEqual(idle_time, 600)
-
-    @patch('homebrew_updater.subprocess.run')
-    def test_get_idle_time_error(self, mock_run):
-        """Test idle time when ioreg fails"""
-        mock_run.side_effect = Exception("ioreg failed")
-
-        idle_time = homebrew_updater.get_idle_time_seconds()
-        self.assertIsNone(idle_time)
-
-    @patch('homebrew_updater.get_idle_time_seconds')
-    def test_is_user_idle_true(self, mock_get_idle):
-        """Test is_user_idle when user is idle"""
-        mock_get_idle.return_value = 600  # 10 minutes
-        self.assertTrue(homebrew_updater.is_user_idle())
-
-    @patch('homebrew_updater.get_idle_time_seconds')
-    def test_is_user_idle_false(self, mock_get_idle):
-        """Test is_user_idle when user is active"""
-        mock_get_idle.return_value = 120  # 2 minutes
-        self.assertFalse(homebrew_updater.is_user_idle())
-
-    @patch('homebrew_updater.get_idle_time_seconds')
-    def test_is_user_idle_none(self, mock_get_idle):
-        """Test is_user_idle when idle time cannot be determined"""
-        mock_get_idle.return_value = None
-        self.assertFalse(homebrew_updater.is_user_idle())
-
-
 class TestWebhookNotifications(unittest.TestCase):
     """Test webhook notification functionality (Discord & Slack)"""
 
@@ -343,32 +289,11 @@ class TestGhostCaskHealing(unittest.TestCase):
             (True, "Uninstalled")  # uninstall
         ]
 
-        removed = homebrew_updater.heal_ghost_casks(skip_sudo=False)
+        removed = homebrew_updater.heal_ghost_casks()
 
         # Should identify and remove the ghost cask
         self.assertEqual(len(removed), 1)
         self.assertIn("ghost-cask", removed)
-
-    @patch('homebrew_updater.run_brew_command')
-    @patch('homebrew_updater.get_caskroom_path')
-    @patch('homebrew_updater.Path')
-    def test_heal_ghost_casks_skip_sudo(self, mock_path_class, mock_get_caskroom, mock_run_brew):
-        """Test healing skips when sudo required and user idle"""
-        # Mock the caskroom path
-        mock_caskroom = MagicMock()
-        mock_get_caskroom.return_value = mock_caskroom
-
-        # Mock cask directory doesn't exist (ghost cask)
-        mock_cask_dir = MagicMock()
-        mock_cask_dir.exists.return_value = False
-        mock_caskroom.__truediv__.return_value = mock_cask_dir
-
-        mock_run_brew.return_value = (True, "ghost-cask")
-
-        removed = homebrew_updater.heal_ghost_casks(skip_sudo=True)
-
-        # Should identify but NOT remove (skip_sudo=True)
-        self.assertEqual(len(removed), 0)
 
 
 class TestLogging(unittest.TestCase):
@@ -410,18 +335,16 @@ class TestMainFlow(unittest.TestCase):
 
     @patch('homebrew_updater.cleanup_old_logs')
     @patch('homebrew_updater.send_notification')
-    @patch('homebrew_updater.is_user_idle')
     @patch('homebrew_updater.brew_update')
     @patch('homebrew_updater.heal_ghost_casks')
     @patch('homebrew_updater.brew_upgrade_formulae')
     @patch('homebrew_updater.brew_upgrade_casks')
     @patch('homebrew_updater.brew_cleanup')
     @patch('homebrew_updater.brew_doctor')
-    def test_main_user_active_success(self, mock_doctor, mock_cleanup, mock_upgrade_casks,
-                                       mock_upgrade_formulae, mock_heal, mock_update,
-                                       mock_idle, mock_notification, mock_cleanup_logs):
-        """Test main flow when user is active and all succeeds"""
-        mock_idle.return_value = False
+    def test_main_success(self, mock_doctor, mock_cleanup, mock_upgrade_casks,
+                          mock_upgrade_formulae, mock_heal, mock_update,
+                          mock_notification, mock_cleanup_logs):
+        """Test main flow when all operations succeed"""
         mock_update.return_value = True
         mock_heal.return_value = ["ghost-cask"]
         mock_upgrade_formulae.return_value = (True, ["pkg1", "pkg2", "pkg3", "pkg4", "pkg5"])
@@ -439,34 +362,9 @@ class TestMainFlow(unittest.TestCase):
 
     @patch('homebrew_updater.cleanup_old_logs')
     @patch('homebrew_updater.send_notification')
-    @patch('homebrew_updater.is_user_idle')
     @patch('homebrew_updater.brew_update')
-    @patch('homebrew_updater.heal_ghost_casks')
-    @patch('homebrew_updater.brew_upgrade_formulae')
-    @patch('homebrew_updater.brew_cleanup')
-    @patch('homebrew_updater.brew_doctor')
-    def test_main_user_idle_success(self, mock_doctor, mock_cleanup, mock_upgrade_formulae,
-                                     mock_heal, mock_update, mock_idle, mock_notification,
-                                     mock_cleanup_logs):
-        """Test main flow when user is idle (skips casks)"""
-        mock_idle.return_value = True
-        mock_update.return_value = True
-        mock_heal.return_value = []
-        mock_upgrade_formulae.return_value = (True, ["pkg1", "pkg2", "pkg3", "pkg4", "pkg5"])
-
-        result = homebrew_updater.main()
-
-        self.assertEqual(result, 0)
-        # Verify cask upgrade was NOT called
-        mock_upgrade_formulae.assert_called_once()
-
-    @patch('homebrew_updater.cleanup_old_logs')
-    @patch('homebrew_updater.send_notification')
-    @patch('homebrew_updater.is_user_idle')
-    @patch('homebrew_updater.brew_update')
-    def test_main_update_failure(self, mock_update, mock_idle, mock_notification, mock_cleanup_logs):
+    def test_main_update_failure(self, mock_update, mock_notification, mock_cleanup_logs):
         """Test main flow when brew update fails"""
-        mock_idle.return_value = False
         mock_update.return_value = False
 
         result = homebrew_updater.main()

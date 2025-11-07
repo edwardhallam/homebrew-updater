@@ -2,13 +2,12 @@
 
 **Automated Homebrew package management for macOS with intelligent scheduling and dual notifications.**
 
-Keep your Homebrew packages and casks up-to-date automatically with smart idle detection, Slack/Discord webhooks, native macOS notifications, and automatic ghost cask healing.
+Keep your Homebrew packages and casks up-to-date automatically with Slack/Discord webhooks, native macOS notifications, and automatic ghost cask healing.
 
 ## ✨ Features
 
 - **🔔 Notification System**: Slack/Discord webhooks + native macOS notifications
 - **🔓 Passwordless Sudo**: Fully unattended cask upgrades via secure sudoers configuration
-- **🖱️ Intelligent Idle Detection**: Optimizes operations based on system activity
 - **👻 Ghost Cask Healing**: Automatically removes broken cask installations
 - **📦 Complete Package Management**: Updates formulae, casks, and cleans up old files
 - **🏥 Health Checks**: Runs `brew doctor` after updates
@@ -56,7 +55,6 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 
 # Optional: Customize these if needed
 BREW_PATH=/opt/homebrew/bin/brew
-IDLE_THRESHOLD_SECONDS=300
 MAX_LOG_FILES=10
 ```
 
@@ -74,7 +72,6 @@ DISCORD_USER_ID=YOUR_USER_ID_HERE
 
 # Optional: Customize these if needed
 BREW_PATH=/opt/homebrew/bin/brew
-IDLE_THRESHOLD_SECONDS=300
 MAX_LOG_FILES=10
 ```
 
@@ -189,38 +186,19 @@ launchctl list | grep homebrew-updater
 | `DISCORD_WEBHOOK_URL` | Discord webhook URL for notifications | _(none)_ |
 | `DISCORD_USER_ID` | Discord user ID for @mentions | _(none)_ |
 | `BREW_PATH` | Path to Homebrew binary | `/opt/homebrew/bin/brew` |
-| `IDLE_THRESHOLD_SECONDS` | Idle time threshold (seconds) | `300` (5 minutes) |
 | `MAX_LOG_FILES` | Number of log files to retain | `10` |
-
-### Idle Detection Behavior
-
-The updater checks system idle time before running:
-
-- **User Active** (< 5 minutes idle):
-  - Updates all formulae
-  - Updates all casks
-  - Heals ghost casks
-  - Full cleanup
-
-- **User Idle** (> 5 minutes idle):
-  - Updates formulae only
-  - Skips cask updates
-  - Skips ghost healing
-
-**Note:** With passwordless sudo configured (see setup step 4), all operations can run unattended regardless of idle state. The idle detection provides an additional safety mechanism to avoid interrupting active work.
 
 ## 📝 How It Works
 
 1. **Scheduled Execution**: LaunchAgent triggers at configured time (default: 10:00 AM daily)
-2. **Idle Check**: Determines if user is active or idle
-3. **Package Updates**:
+2. **Package Updates**:
    - Updates Homebrew itself
-   - Heals ghost casks (if user active)
+   - Heals ghost casks (passwordless sudo)
    - Upgrades formulae
-   - Upgrades casks (if user active)
-4. **Cleanup**: Removes old downloads and cache files
-5. **Health Check**: Runs `brew doctor` for diagnostics
-6. **Notifications**: Sends detailed summary to Slack/Discord and macOS Notification Center
+   - Upgrades casks (passwordless sudo)
+3. **Cleanup**: Removes old downloads and cache files
+4. **Health Check**: Runs `brew doctor` for diagnostics
+5. **Notifications**: Sends detailed summary to Slack/Discord and macOS Notification Center
 
 ## 🔔 Notification Examples
 
