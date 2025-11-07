@@ -52,7 +52,6 @@ NOTIFICATION_PLATFORM = os.getenv("NOTIFICATION_PLATFORM", "discord").lower()
 
 # Homebrew paths
 BREW_PATH = os.getenv("BREW_PATH", "/opt/homebrew/bin/brew")
-SUDO_GUI_SCRIPT = Path(__file__).parent / "brew_autoupdate_sudo_gui"
 
 # Logging
 LOG_DIR = Path.home() / "Library/Logs/homebrew-updater"
@@ -65,9 +64,6 @@ BREW_ENV = {
     "HOMEBREW_CACHE": str(Path.home() / "Library/Caches/Homebrew"),
     "HOMEBREW_LOGS": str(Path.home() / "Library/Logs/Homebrew"),
 }
-
-if SUDO_GUI_SCRIPT.exists():
-    BREW_ENV["SUDO_ASKPASS"] = str(SUDO_GUI_SCRIPT)
 
 # ============================================================================
 # LOGGING SETUP
