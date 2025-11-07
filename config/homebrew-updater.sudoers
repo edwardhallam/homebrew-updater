@@ -15,15 +15,16 @@
 # Allow file removal operations that brew cask uses during cleanup
 # These are the specific commands that brew calls internally with sudo
 # Note: Brew should never be run directly as root, but it calls these commands internally
-%admin ALL=(root) NOPASSWD: /usr/bin/xargs *
-%admin ALL=(root) NOPASSWD: /bin/rm *
-%admin ALL=(root) NOPASSWD: /opt/homebrew/Library/Homebrew/cask/utils/rmdir.sh *
+# SETENV allows brew to use sudo -E (preserve environment) which is needed for cleanup
+%admin ALL=(root) SETENV: NOPASSWD: /usr/bin/xargs *
+%admin ALL=(root) SETENV: NOPASSWD: /bin/rm *
+%admin ALL=(root) SETENV: NOPASSWD: /opt/homebrew/Library/Homebrew/cask/utils/rmdir.sh *
 
 # Allow pkgutil operations for package uninstallation
-%admin ALL=(root) NOPASSWD: /usr/sbin/pkgutil *
+%admin ALL=(root) SETENV: NOPASSWD: /usr/sbin/pkgutil *
 
 # Allow installer operations for package installation
-%admin ALL=(root) NOPASSWD: /usr/sbin/installer *
+%admin ALL=(root) SETENV: NOPASSWD: /usr/sbin/installer *
 
 # Allow launchctl operations for service management
-%admin ALL=(root) NOPASSWD: /bin/launchctl *
+%admin ALL=(root) SETENV: NOPASSWD: /bin/launchctl *
